@@ -140,27 +140,42 @@ class HttpAdapter:
 
         print("[HttpAdapter] Invoke handle_client_coroutine connection {})".format(addr))
         addr = writer.get_extra_info("peername")
+        try:
+            # TODO Handle the request asynchronously
+            msg = await asyncio.wait_for(reader.read(1024), timeout=5.0)
+            if not msg:
+                writer.close()
+                await writer.wait_closed() 
+                return
 
-        # TODO Handle the request asynchronously
-        msg = await reader.read(1024)
 
+            req.prepare(msg.decode("utf-8"), routes={})
 
-        req.prepare(msg.decode("utf-8"), routes={})
+            # Handle request hook
+            if req.hook:
+                #
+                # TODO: handle for App hook here
+                #
+                if inspect.iscoroutinefunction(req.hook):
+                    body_response = await req.hook(req.headers, req.body)
+                else:
+                    body_response = req.hook(req.headers, req.body)
+                
+                req._content = body_response
+                resp.status_code = 200
+                resp.headers['Content-Type'] = 'application/json'
 
-        # Handle request hook
-        if req.hook:
-            #
-            # TODO: handle for App hook here
-            #
-            response = ""
-
-        # Build response
-        #print("[HttpAdapter] Start **ASYNC** build_response with type {}".format(type(req)))
-        response = resp.build_response(req)
-
-        # Send all the response asynchronously
-        writer.write(response)
-        await writer.drain()
+            # Build response
+            #print("[HttpAdapter] Start **ASYNC** build_response with type {}".format(type(req)))
+            response = resp.build_response(req)
+            # Send all the response asynchronously
+            writer.write(response)
+            await writer.drain()
+        except Exception as e:
+            print("[HttpAdapter] Error: {}".format(e))
+        finally:
+            writer.closed()
+            await writer.wait_closed()
 
     @property
     def extract_cookies(self, req, resp):

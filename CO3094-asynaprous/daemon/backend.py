@@ -54,9 +54,7 @@ from .dictionary import CaseInsensitiveDict
 import selectors
 sel = selectors.DefaultSelector()
 
-mode_async = "callback"
-#mode_async = "coroutine"
-mode_async = "threading"
+mode_async = "coroutine"
 
 def handle_client(ip, port, conn, addr, routes):
     """
@@ -106,8 +104,8 @@ async def handle_client_coroutine(reader, writer):
 
     # Handle client in asynchronous mode
     while True:
-          daemon = HttpAdapter(None, None, None, None, None)
-           await daemon.handle_client_coroutine(reader, writer)
+        daemon = HttpAdapter(None, None, None, addr, None)
+        await daemon.handle_client_coroutine(reader, writer)
 
 async def async_server(ip="0.0.0.0", port=7000, routes={}):
     print("[Backend] async_server **ASYNC** listening on port {}".format(port))
@@ -195,10 +193,8 @@ def run_backend(ip, port, routes):
             else:
                # Baseline multi-thread implementation
                #client_thread = threading.Thread...
-
-
     except socket.error as e:
-      print("Socket error: {}".format(e))
+        print("Socket error: {}".format(e))
 
 def create_backend(ip, port, routes={}):
     """
