@@ -191,16 +191,34 @@ _rr_lock = threading.Lock()
 def forward_request(host, port, request):
     """Forward an HTTP request to a backend (non-blocking).
 
+    Rewrites the ``Host`` header so the backend sees the
+    correct address rather than the proxy's virtual hostname.
+
     :param host: Backend IP address.
     :param port: Backend port number.
     :param request: Raw HTTP request string.
     :rtype: bytes — raw HTTP response.
     """
+    # Rewrite Host header to match actual backend
+    import re as _re
+    new_host = "{}:{}".format(host, port)
+    request = _re.sub(
+        r'(?i)^(Host:\s*)[^\r\n]*',
+        r'\g<1>' + new_host,
+        request,
+        count=1,
+        flags=_re.MULTILINE,
+    )
+
     backend = socket.socket(
         socket.AF_INET, socket.SOCK_STREAM
     )
 
     try:
+        print(
+            "[Proxy] forward connecting "
+            "to {}:{}".format(host, port)
+        )
         # Non-blocking connect
         nb_connect(backend, (host, port), timeout=5)
 
@@ -211,6 +229,18 @@ def forward_request(host, port, request):
 
         # Non-blocking receive
         response = nb_recv_all(backend, timeout=5)
+        if response:
+            print(
+                "[Proxy] forward got {} bytes "
+                "from {}:{}".format(
+                    len(response), host, port
+                )
+            )
+        else:
+            print(
+                "[Proxy] forward empty response "
+                "from {}:{}".format(host, port)
+            )
         return response if response else _build_502()
 
     except BlockingIOError:
@@ -221,7 +251,8 @@ def forward_request(host, port, request):
         return _build_502()
     except (socket.timeout, socket.error) as exc:
         print(
-            "[Proxy] forward error: {}".format(exc)
+            "[Proxy] forward error to "
+            "{}:{}: {}".format(host, port, exc)
         )
         return _build_502()
     finally:
@@ -247,6 +278,9 @@ def resolve_routing_policy(hostname, routes):
         return ("__TRACKER__", "0")
 
     route_entry = routes.get(hostname)
+    if route_entry is None and ":" in hostname:
+        route_entry = routes.get(hostname.split(":")[0])
+
     if route_entry is None:
         print(
             "[Proxy] No route for '{}'"

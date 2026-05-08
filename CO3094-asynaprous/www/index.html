@@ -474,8 +474,8 @@
                     body: JSON.stringify({
                         username: u,
                         password: p,
-                        peer_ip: '127.0.0.1',
-                        peer_port: 9001
+                        peer_ip: window.location.hostname || '127.0.0.1',
+                        peer_port: parseInt(window.location.port) || 9001
                     })
                 });
                 const data = await res.json();

@@ -248,17 +248,13 @@ class Response():
             }
 
         # Header text alignment
-            #
-            #  TODO: implement the header building to create formated
-            #        header from the provied headers
-            #
-            #
-            # TODO prepare the request authentication
-            #
-            # self.auth = ...
+        fmt_header = "HTTP/1.1 200 OK\r\n"
+        for k, v in headers.items():
+            if v is not None and str(v).strip() != "None":
+                fmt_header += "{}: {}\r\n".format(k, v)
+        fmt_header += "Connection: close\r\n\r\n"
 
-
-        return str(fmt_header).encode('utf-8')
+        return fmt_header.encode('utf-8')
 
 
     def build_notfound(self):
@@ -311,5 +307,12 @@ class Response():
         #
         else:
             return self.build_notfound()
+
+        content_len, content_bytes = self.build_content(path, base_dir)
+        if content_len == -1:
+            return self.build_notfound()
+            
+        self._content = content_bytes
+        self._header = self.build_response_header(request)
 
         return self._header + self._content

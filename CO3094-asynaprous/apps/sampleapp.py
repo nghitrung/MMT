@@ -120,6 +120,7 @@ class MessageStore:
                 m for m in self._messages
                 if m.sender == username
                 or m.recipient == username
+                or m.recipient == "self"
             )
 
     def count(self):
@@ -671,7 +672,7 @@ def handle_send(headers="guest", body="anonymous"):
         
     # Send P2P message (this adds to MessageStore automatically)
     result = send_p2p_message(
-        target["ip"], int(target["port"]), username, text
+        target["ip"], int(target["port"]), username, text, target_user=target_user
     )
     
     return json.dumps(result).encode("utf-8")
@@ -684,7 +685,7 @@ def handle_send(headers="guest", body="anonymous"):
 
 
 def send_p2p_message(peer_ip, peer_port,
-                     sender_name, message, timeout=5):
+                     sender_name, message, target_user="peer", timeout=5):
     """Send a direct P2P message via non-blocking socket.
 
     The socket uses ``setblocking(False)`` throughout.
@@ -713,7 +714,7 @@ def send_p2p_message(peer_ip, peer_port,
         msg = ChatMessage(
             msg_id=0,
             sender=sender_name,
-            recipient="peer",
+            recipient=target_user,
             content=message,
             timestamp=(
                 datetime.datetime.utcnow().isoformat()
