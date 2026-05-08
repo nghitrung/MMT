@@ -108,7 +108,7 @@ class Request():
         """Prepares the entire request with the given parameters."""
 
         # Prepare the request line from the request header
-        print("[Request] prepare request missg {}".format(request))
+        print("[Request] prepare request missg {}".format(repr(request)[:200] + '...'))
         self.method, self.path, self.version = self.extract_request_line(request)
         print("[Request] {} path {} version {}".format(self.method, self.path, self.version))
 
@@ -129,9 +129,10 @@ class Request():
             # ...
             #
 
-        self._raw_heaers = ""
-        self._raw_body =  ""
-        cookies = self.headers.get('cookie', '')
+        self._raw_headers = ""
+        self._raw_body = ""
+        self.headers = self.prepare_headers(request)
+        cookies = self.headers.get('cookie', '') if self.headers else ''
             #
             #  TODO: implement the cookie function here
             #        by parsing the header            #

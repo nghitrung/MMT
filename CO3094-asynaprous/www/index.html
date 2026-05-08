@@ -1,21 +1,630 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title>bksysnet@hcmut welcome</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AsynapRous P2P Chat</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+        
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #10b981;
+            --danger: #ef4444;
+            --border: rgba(255, 255, 255, 0.1);
+        }
 
-    <meta charset="utf-8" />
-    <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="css/styles.css" />
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
+        }
+
+        /* --- Login Overlay --- */
+        #login-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            transition: opacity 0.5s ease;
+        }
+
+        .login-card {
+            background: var(--bg-panel);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            width: 400px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .login-card h2 {
+            margin-bottom: 10px;
+            font-weight: 600;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .login-card p {
+            color: var(--text-muted);
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: white;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+        }
+
+        #login-error {
+            color: var(--danger);
+            font-size: 0.85rem;
+            margin-top: 15px;
+            min-height: 20px;
+        }
+
+        /* --- Main App Layout --- */
+        #app-container {
+            width: 90%;
+            max-width: 1200px;
+            height: 90vh;
+            background: var(--bg-card);
+            border-radius: 24px;
+            border: 1px solid var(--border);
+            backdrop-filter: blur(20px);
+            display: flex;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        #app-container.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* --- Sidebar --- */
+        .sidebar {
+            width: 300px;
+            background: rgba(0, 0, 0, 0.2);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-profile {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .logout-btn {
+            background: transparent;
+            width: auto;
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .logout-btn:hover {
+            color: white;
+            border-color: white;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .peer-list-header {
+            padding: 20px 24px 10px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .peer-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .peer-item {
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: background 0.2s;
+        }
+
+        .peer-item:hover, .peer-item.active {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .peer-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            border-left: 3px solid var(--primary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        /* --- Chat Area --- */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: transparent;
+        }
+
+        .chat-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .chat-header h3 {
+            font-weight: 500;
+        }
+
+        .chat-history {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 70%;
+            padding: 14px 18px;
+            border-radius: 18px;
+            position: relative;
+            animation: fadeIn 0.3s ease;
+            line-height: 1.4;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .msg-self {
+            align-self: flex-end;
+            background: var(--primary);
+            border-bottom-right-radius: 4px;
+        }
+
+        .msg-peer {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+        }
+
+        .msg-meta {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 6px;
+            text-align: right;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .msg-sender {
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 0.8rem;
+            color: #93c5fd;
+        }
+
+        .chat-input-area {
+            padding: 20px 24px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 15px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            border-radius: 24px;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .chat-input-area button {
+            width: auto;
+            padding: 0 24px;
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .empty-state {
+            display: flex;
+            flex: 1;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            flex-direction: column;
+            gap: 15px;
+        }
+    </style>
 </head>
-
 <body>
-<div>
-    <h1>bksysnet@hcmut  Domain</h1>
-    <p>This domain is for use in illustrative examples in documents.
-    </p>
-  
-       <img src="images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">  
-</div>
+
+    <!-- Login Screen -->
+    <div id="login-overlay">
+        <div class="login-card">
+            <h2>AsynapRous Chat</h2>
+            <p>P2P Non-blocking Communication</p>
+            <form id="login-form">
+                <div class="input-group">
+                    <label>Username</label>
+                    <input type="text" id="username" placeholder="e.g. alice" required>
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="password" placeholder="e.g. password123" required>
+                </div>
+                <button type="submit" id="login-btn">Connect to Tracker</button>
+                <div id="login-error"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="user-profile">
+                <div class="user-info">
+                    <div class="avatar" id="my-avatar">A</div>
+                    <div>
+                        <div id="my-username" style="font-weight: 500;">Alice</div>
+                        <div style="font-size: 0.75rem; color: var(--accent);">Online</div>
+                    </div>
+                </div>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+            
+            <div class="peer-list-header">
+                <span>Active Peers</span>
+                <span id="peer-count" style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 10px;">0</span>
+            </div>
+            
+            <div class="peer-list" id="peer-list">
+                <!-- Dynamic peers go here -->
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-area">
+            <div class="chat-header">
+                <h3 id="chat-title">Global Chat (Broadcast)</h3>
+            </div>
+            
+            <div class="chat-history" id="chat-history">
+                <div class="empty-state">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    <p>Select a peer or broadcast to everyone</p>
+                </div>
+            </div>
+            
+            <form class="chat-input-area" id="chat-form">
+                <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off">
+                <button type="submit">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let selectedPeer = null; // null means broadcast
+        let lastMessageCount = 0;
+        let pollInterval = null;
+
+        const DOM = {
+            loginOverlay: document.getElementById('login-overlay'),
+            appContainer: document.getElementById('app-container'),
+            loginForm: document.getElementById('login-form'),
+            loginError: document.getElementById('login-error'),
+            myAvatar: document.getElementById('my-avatar'),
+            myUsername: document.getElementById('my-username'),
+            peerList: document.getElementById('peer-list'),
+            peerCount: document.getElementById('peer-count'),
+            chatTitle: document.getElementById('chat-title'),
+            chatHistory: document.getElementById('chat-history'),
+            chatForm: document.getElementById('chat-form'),
+            msgInput: document.getElementById('msg-input')
+        };
+
+        // --- Auth ---
+        DOM.loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value;
+            const btn = document.getElementById('login-btn');
+            
+            btn.textContent = 'Connecting...';
+            DOM.loginError.textContent = '';
+            
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        username: u,
+                        password: p,
+                        peer_ip: '127.0.0.1',
+                        peer_port: 9001
+                    })
+                });
+                const data = await res.json();
+                
+                if(data.status === 'ok') {
+                    // Set cookie for auth
+                    document.cookie = `session=${data.session}; path=/;`;
+                    currentUser = u;
+                    
+                    // Update UI
+                    DOM.myUsername.textContent = u;
+                    DOM.myAvatar.textContent = u.charAt(0).toUpperCase();
+                    DOM.loginOverlay.style.opacity = '0';
+                    setTimeout(() => {
+                        DOM.loginOverlay.style.display = 'none';
+                        DOM.appContainer.classList.add('active');
+                        startPolling();
+                    }, 500);
+                } else {
+                    DOM.loginError.textContent = data.message || 'Login failed';
+                }
+            } catch(e) {
+                DOM.loginError.textContent = 'Server connection failed';
+            }
+            btn.textContent = 'Connect to Tracker';
+        });
+
+        async function logout() {
+            try {
+                await fetch('/logout', {
+                    method: 'POST',
+                    body: JSON.stringify({username: currentUser})
+                });
+            } catch(e){}
+            
+            document.cookie = 'session=; Max-Age=0; path=/;';
+            clearInterval(pollInterval);
+            location.reload();
+        }
+
+        // --- Data Fetching ---
+        function startPolling() {
+            fetchData();
+            pollInterval = setInterval(fetchData, 2000);
+        }
+
+        async function fetchData() {
+            try {
+                // Fetch peers
+                const pRes = await fetch('/get-list');
+                const pData = await pRes.json();
+                if(pData.status === 'ok') {
+                    renderPeers(pData.peers);
+                }
+
+                // Fetch history
+                const hRes = await fetch('/history');
+                const hData = await hRes.json();
+                if(hData.status === 'ok') {
+                    if (hData.messages.length !== lastMessageCount) {
+                        lastMessageCount = hData.messages.length;
+                        renderHistory(hData.messages);
+                    }
+                }
+            } catch(e) {
+                console.error("Polling error", e);
+            }
+        }
+
+        function renderPeers(peers) {
+            const activePeers = peers.filter(p => p.username !== currentUser);
+            DOM.peerCount.textContent = activePeers.length;
+            
+            let html = `
+                <div class="peer-item ${selectedPeer === null ? 'active' : ''}" onclick="selectPeer(null)">
+                    <div class="avatar" style="background: rgba(255,255,255,0.1); font-size:1rem;">🌍</div>
+                    <div style="flex:1">Broadcast (All)</div>
+                </div>
+            `;
+
+            activePeers.forEach(p => {
+                html += `
+                    <div class="peer-item ${selectedPeer === p.username ? 'active' : ''}" onclick="selectPeer('${p.username}')">
+                        <div class="avatar" style="width:30px; height:30px; font-size:0.9rem;">${p.username.charAt(0).toUpperCase()}</div>
+                        <div style="flex:1">${p.username}</div>
+                        <div class="status-dot"></div>
+                    </div>
+                `;
+            });
+            DOM.peerList.innerHTML = html;
+        }
+
+        function selectPeer(username) {
+            selectedPeer = username;
+            if(username) {
+                DOM.chatTitle.innerHTML = `Chatting with <span style="color:var(--primary)">${username}</span>`;
+            } else {
+                DOM.chatTitle.textContent = 'Global Chat (Broadcast)';
+            }
+            fetchData(); // re-render list active state
+        }
+
+        function renderHistory(messages) {
+            if(messages.length === 0) return;
+            
+            let html = '';
+            messages.forEach(m => {
+                // Determine if it's sent or received
+                const isSelf = m.sender === currentUser;
+                const cssClass = isSelf ? 'msg-self' : 'msg-peer';
+                
+                html += `
+                    <div class="message ${cssClass}">
+                        ${!isSelf ? `<div class="msg-sender">${m.sender}</div>` : ''}
+                        <div>${m.content}</div>
+                        <div class="msg-meta">
+                            <span>${m.timestamp.split('T')[1] ? m.timestamp.split('T')[1].substring(0,8) : m.timestamp}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            DOM.chatHistory.innerHTML = html;
+            DOM.chatHistory.scrollTop = DOM.chatHistory.scrollHeight;
+        }
+
+        // --- Sending ---
+        DOM.chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = DOM.msgInput.value.trim();
+            if(!text) return;
+            
+            DOM.msgInput.value = '';
+            
+            if(selectedPeer) {
+                // Send P2P
+                try {
+                    await fetch('/send', {
+                        method: 'POST',
+                        body: JSON.stringify({to: selectedPeer, message: text})
+                    });
+                    // Instantly trigger history update
+                    setTimeout(fetchData, 200);
+                } catch(e){}
+            } else {
+                // Send Broadcast - for simplicity just alert or implement broadcast API
+                alert('Broadcast requires backend support or frontend loop. Sending to all peers not fully wired in UI yet.');
+            }
+        });
+    </script>
 </body>
 </html>
