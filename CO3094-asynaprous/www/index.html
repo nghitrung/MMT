@@ -546,8 +546,15 @@
         }
 
         function renderPeers(peers) {
-            const activePeers = peers.filter(p => p.username !== currentUser);
-            DOM.peerCount.textContent = activePeers.length;
+            // deduplicate by username, prioritize online
+            const uniquePeersMap = new Map();
+            peers.filter(p => p.username !== currentUser).forEach(p => {
+                if (!uniquePeersMap.has(p.username) || p.status === 'online') {
+                    uniquePeersMap.set(p.username, p);
+                }
+            });
+            const allPeers = Array.from(uniquePeersMap.values());
+            DOM.peerCount.textContent = allPeers.length;
             
             let html = `
                 <div class="peer-item ${selectedPeer === null ? 'active' : ''}" onclick="selectPeer(null)">
@@ -556,12 +563,14 @@
                 </div>
             `;
 
-            activePeers.forEach(p => {
+            allPeers.forEach(p => {
+                const isOnline = p.status === 'online';
+                const dotStyle = isOnline ? 'background: var(--accent); box-shadow: 0 0 10px var(--accent);' : 'background: #475569; box-shadow: none;';
                 html += `
                     <div class="peer-item ${selectedPeer === p.username ? 'active' : ''}" onclick="selectPeer('${p.username}')">
                         <div class="avatar" style="width:30px; height:30px; font-size:0.9rem;">${p.username.charAt(0).toUpperCase()}</div>
-                        <div style="flex:1">${p.username}</div>
-                        <div class="status-dot"></div>
+                        <div style="flex:1; opacity: ${isOnline ? '1' : '0.5'}">${p.username}</div>
+                        <div class="status-dot" style="${dotStyle}"></div>
                     </div>
                 `;
             });
@@ -581,8 +590,25 @@
         function renderHistory(messages) {
             if(messages.length === 0) return;
             
+            let filteredMessages = [];
+            if (selectedPeer === null) {
+                filteredMessages = messages.filter(m => m.recipient === "Broadcast");
+            } else {
+                filteredMessages = messages.filter(m => 
+                    m.recipient === selectedPeer || m.sender === selectedPeer
+                );
+            }
+
+            if(filteredMessages.length === 0) {
+                DOM.chatHistory.innerHTML = `
+                <div class="empty-state">
+                    <p>No messages yet.</p>
+                </div>`;
+                return;
+            }
+
             let html = '';
-            messages.forEach(m => {
+            filteredMessages.forEach(m => {
                 // Determine if it's sent or received
                 const isSelf = m.sender === currentUser;
                 const cssClass = isSelf ? 'msg-self' : 'msg-peer';
@@ -621,8 +647,14 @@
                     setTimeout(fetchData, 200);
                 } catch(e){}
             } else {
-                // Send Broadcast - for simplicity just alert or implement broadcast API
-                alert('Broadcast requires backend support or frontend loop. Sending to all peers not fully wired in UI yet.');
+                // Send Broadcast
+                try {
+                    await fetch('/broadcast', {
+                        method: 'POST',
+                        body: JSON.stringify({message: text})
+                    });
+                    setTimeout(fetchData, 200);
+                } catch(e){}
             }
         });
     </script>

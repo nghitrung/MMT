@@ -121,6 +121,7 @@ class MessageStore:
                 if m.sender == username
                 or m.recipient == username
                 or m.recipient == "self"
+                or m.recipient == "Broadcast"
             )
 
     def count(self):
@@ -539,11 +540,13 @@ def receive_message(headers="guest", body="anonymous"):
         timestamp = datetime.datetime.utcnow().strftime(
             "%H:%M:%S"
         )
+        is_broadcast = data.get("is_broadcast", False)
+        recipient = "Broadcast" if is_broadcast else "self"
 
         # Store as immutable ChatMessage (append-only)
         msg = message_store.append(
             sender=sender,
-            recipient="self",
+            recipient=recipient,
             content=content,
         )
 
@@ -602,6 +605,21 @@ def get_history(headers="guest", body="anonymous"):
             "status": "error",
             "message": "Not authenticated",
         }).encode("utf-8")
+
+    # Poll offline messages from Tracker
+    raw_offline = _http_request(TRACKER_HOST, TRACKER_PORT, "GET", "/peers/messages/offline?user={}".format(username))
+    try:
+        data = json.loads(raw_offline)
+        if data.get("status") == "ok" and data.get("messages"):
+            for m in data["messages"]:
+                is_bc = m.get("is_broadcast", False)
+                message_store.append(
+                    sender=m.get("from", "unknown"),
+                    recipient="Broadcast" if is_bc else "self",
+                    content=m.get("message", "")
+                )
+    except Exception as e:
+        print("[SampleApp] Offline fetch error: {}".format(e))
 
     # Get messages
     msgs = message_store.get_by_user(username)
@@ -667,8 +685,21 @@ def handle_send(headers="guest", body="anonymous"):
             target = p
             break
             
-    if not target:
-        return json.dumps({"status": "error", "message": "Peer not online"}).encode("utf-8")
+    if not target or target.get("status") == "offline":
+        # Peer not online, send to offline queue
+        payload = {
+            "to": target_user,
+            "from": username,
+            "message": text,
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "is_broadcast": False
+        }
+        _http_request(TRACKER_HOST, TRACKER_PORT, "POST", "/peers/messages/offline", payload)
+        
+        # Store locally (append-only, immutable)
+        stored = message_store.append(sender=username, recipient=target_user, content=text)
+        
+        return json.dumps({"status": "stored_offline", "msg_id": stored.msg_id}).encode("utf-8")
         
     # Send P2P message (this adds to MessageStore automatically)
     result = send_p2p_message(
@@ -676,6 +707,61 @@ def handle_send(headers="guest", body="anonymous"):
     )
     
     return json.dumps(result).encode("utf-8")
+
+# ---------------------------------------------------------------
+# Route: /broadcast (POST) — Frontend initiates broadcast
+# ---------------------------------------------------------------
+
+@app.route('/broadcast', methods=['POST'])
+def handle_broadcast(headers="guest", body="anonymous"):
+    """Handle frontend request to broadcast a message.
+    
+    Body should contain {"message": "content"}
+    :rtype: bytes
+    """
+    print("[SampleApp] /broadcast invoked")
+    
+    # Authenticate
+    username = None
+    if isinstance(headers, dict):
+        cookie_str = headers.get("cookie", "")
+        for pair in cookie_str.split(";"):
+            pair = pair.strip()
+            if pair.startswith("session="):
+                username = pair.split("=", 1)[1]
+                break
+
+    if not username:
+        return json.dumps({"status": "error", "message": "Not authenticated"}).encode("utf-8")
+        
+    try:
+        data = json.loads(body)
+        text = data.get("message")
+    except Exception:
+        return json.dumps({"status": "error", "message": "Invalid JSON"}).encode("utf-8")
+        
+    if not text:
+        return json.dumps({"status": "error", "message": "Missing 'message'"}).encode("utf-8")
+        
+    peer_data = _fetch_peer_list()
+    peers = peer_data.get("peers", [])
+    
+    my_ip = "127.0.0.1"
+    my_port = 9000
+    with _sessions_lock:
+        info = _sessions.get(username)
+        if info:
+            my_ip = info.get("peer_ip", my_ip)
+            my_port = info.get("peer_port", my_port)
+
+    results = broadcast_message(
+        peers, username, text,
+        exclude_self=(my_ip, my_port)
+    )
+    
+    stored = message_store.append(sender=username, recipient="Broadcast", content=text)
+    
+    return json.dumps({"status": "ok", "delivered_to": len(results), "msg_id": stored.msg_id}).encode("utf-8")
 
 
 # ---------------------------------------------------------------
@@ -685,7 +771,7 @@ def handle_send(headers="guest", body="anonymous"):
 
 
 def send_p2p_message(peer_ip, peer_port,
-                     sender_name, message, target_user="peer", timeout=5):
+                     sender_name, message, target_user="peer", timeout=5, store_local=True, is_broadcast=False):
     """Send a direct P2P message via non-blocking socket.
 
     The socket uses ``setblocking(False)`` throughout.
@@ -721,18 +807,23 @@ def send_p2p_message(peer_ip, peer_port,
             ),
         )
 
-        # Store locally (append-only, immutable)
-        stored = message_store.append(
-            sender=msg.sender,
-            recipient=msg.recipient,
-            content=msg.content,
-        )
+        if store_local:
+            # Store locally (append-only, immutable)
+            stored = message_store.append(
+                sender=msg.sender,
+                recipient=msg.recipient,
+                content=msg.content,
+            )
+            stored_msg_id = stored.msg_id
+        else:
+            stored_msg_id = 0
 
         payload = json.dumps({
             "from": msg.sender,
             "message": msg.content,
             "timestamp": msg.timestamp,
-            "msg_id": stored.msg_id,
+            "msg_id": stored_msg_id,
+            "is_broadcast": is_broadcast
         })
         payload_bytes = payload.encode("utf-8")
 
@@ -826,17 +917,25 @@ def broadcast_message(peer_list, sender_name, message,
         peer_user = peer.get("username", "unknown")
 
         if exclude_self:
-            if (peer_ip, peer_port) == exclude_self:
+            if (peer_ip, peer_port) == exclude_self or peer_user == sender_name:
                 return
 
-        print(
-            "[Broadcast] -> {} ({}:{})".format(
-                peer_user, peer_ip, peer_port
-            )
-        )
+        if peer.get("status") == "offline":
+            # Send to offline queue
+            payload = {
+                "to": peer_user,
+                "from": sender_name,
+                "message": message,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "is_broadcast": True
+            }
+            _http_request(TRACKER_HOST, TRACKER_PORT, "POST", "/peers/messages/offline", payload)
+            with results_lock:
+                results.append({"target_peer": peer_user, "status": "stored_offline"})
+            return
 
         result = send_p2p_message(
-            peer_ip, peer_port, sender_name, message
+            peer_ip, peer_port, sender_name, message, target_user=peer_user, store_local=False, is_broadcast=True
         )
         result["target_peer"] = peer_user
         result["target_addr"] = "{}:{}".format(

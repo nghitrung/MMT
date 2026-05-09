@@ -115,7 +115,22 @@ class PeerTracker:
     def __init__(self):
         """Initialise empty peer registry."""
         self._peers = {}
+        self._offline_messages = {}
         self._lock = threading.Lock()
+
+    def store_offline_message(self, recipient, message_data):
+        with self._lock:
+            if recipient not in self._offline_messages:
+                self._offline_messages[recipient] = []
+            self._offline_messages[recipient].append(message_data)
+        print("[Tracker] Stored offline message for {}".format(recipient))
+
+    def fetch_offline_messages(self, recipient):
+        with self._lock:
+            msgs = self._offline_messages.pop(recipient, [])
+            if msgs:
+                print("[Tracker] Fetched {} offline messages for {}".format(len(msgs), recipient))
+            return msgs
 
     def register(self, ip, port, username="anonymous"):
         """Register or update a peer.
@@ -129,6 +144,7 @@ class PeerTracker:
                 "ip": ip,
                 "port": port,
                 "username": username,
+                "status": "online",
                 "registered_at": (
                     datetime.datetime.utcnow().isoformat()
                 ),
@@ -145,14 +161,16 @@ class PeerTracker:
         :rtype: bool
         """
         with self._lock:
-            removed = self._peers.pop((ip, port), None)
-        if removed:
-            print(
-                "[Tracker] Unregistered {}:{}".format(
-                    ip, port
+            peer = self._peers.get((ip, port))
+            if peer:
+                peer["status"] = "offline"
+                print(
+                    "[Tracker] Unregistered (marked offline) {}:{}".format(
+                        ip, port
+                    )
                 )
-            )
-        return removed is not None
+                return True
+        return False
 
     def get_peers(self):
         """Return snapshot list of all active peers.
@@ -488,6 +506,32 @@ def _handle_tracker_api(request_text, addr):
         except (json.JSONDecodeError, ValueError,
                 TypeError) as exc:
             return _build_400(str(exc))
+
+    # POST /peers/messages/offline
+    if method == "POST" and path == "/peers/messages/offline":
+        body = _extract_body(request_text)
+        try:
+            data = json.loads(body)
+            recipient = data.get("to")
+            if recipient:
+                tracker.store_offline_message(recipient, data)
+                return _build_json_ok({"status": "stored"})
+            else:
+                return _build_400("Missing 'to' field")
+        except json.JSONDecodeError as exc:
+            return _build_400(str(exc))
+
+    # GET /peers/messages/offline?user=...
+    if method == "GET" and path.startswith("/peers/messages/offline"):
+        import urllib.parse
+        parsed = urllib.parse.urlparse(path)
+        qs = urllib.parse.parse_qs(parsed.query)
+        user = qs.get("user", [None])[0]
+        if user:
+            msgs = tracker.fetch_offline_messages(user)
+            return _build_json_ok({"status": "ok", "messages": msgs})
+        else:
+            return _build_400("Missing user parameter")
 
     return _build_404()
 
